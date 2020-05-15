@@ -8,4 +8,21 @@
 	</buildSpec>
 	<natures>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>Web.config</name>
+			<type>1</type>
+			<location>/Users/r00sn/OneDrive - Federation University Australia/MIT/Semester 6/ITECH 3209 Project 2/Github/Online Platform for Wholesalers and Retailers/Web.config</location>
+		</link>
+		<link>
+			<name>onlineplatform.sql</name>
+			<type>1</type>
+			<location>/Users/r00sn/OneDrive - Federation University Australia/MIT/Semester 6/ITECH 3209 Project 2/Github/Online Platform for Wholesalers and Retailers/onlineplatform.sql</location>
+		</link>
+		<link>
+			<name>stylesheet.css</name>
+			<type>1</type>
+			<location>/Users/r00sn/OneDrive - Federation University Australia/MIT/Semester 6/ITECH 3209 Project 2/Github/Online Platform for Wholesalers and Retailers/stylesheet.css</location>
+		</link>
+	</linkedResources>
 </projectDescription>
