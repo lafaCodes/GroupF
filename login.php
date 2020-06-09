@@ -1,248 +1,185 @@
 <?php
-// Initialize the session
-session_start();
+class ControllerAccountLogin extends Controller {
+	private $error = array();
 
-// Check if the user is already logged in, if yes then redirect him to welcome page
-if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
-    header('location: login.php');
-    exit;
+	public function index() {
+		$this->load->model('account/customer');
+
+		// Login override for admin users
+		if (!empty($this->request->get['token'])) {
+			$this->customer->logout();
+			$this->cart->clear();
+
+			unset($this->session->data['order_id']);
+			unset($this->session->data['payment_address']);
+			unset($this->session->data['payment_method']);
+			unset($this->session->data['payment_methods']);
+			unset($this->session->data['shipping_address']);
+			unset($this->session->data['shipping_method']);
+			unset($this->session->data['shipping_methods']);
+			unset($this->session->data['comment']);
+			unset($this->session->data['coupon']);
+			unset($this->session->data['reward']);
+			unset($this->session->data['voucher']);
+			unset($this->session->data['vouchers']);
+
+			$customer_info = $this->model_account_customer->getCustomerByToken($this->request->get['token']);
+
+			if ($customer_info && $this->customer->login($customer_info['email'], '', true)) {
+				// Default Addresses
+				$this->load->model('account/address');
+
+				if ($this->config->get('config_tax_customer') == 'payment') {
+					$this->session->data['payment_address'] = $this->model_account_address->getAddress($this->customer->getAddressId());
+				}
+
+				if ($this->config->get('config_tax_customer') == 'shipping') {
+					$this->session->data['shipping_address'] = $this->model_account_address->getAddress($this->customer->getAddressId());
+				}
+
+				$this->response->redirect($this->url->link('account/account', '', true));
+			}
+		}
+
+		if ($this->customer->isLogged()) {
+			$this->response->redirect($this->url->link('account/account', '', true));
+		}
+
+		$this->load->language('account/login');
+
+		$this->document->setTitle($this->language->get('heading_title'));
+
+		if (($this->request->server['REQUEST_METHOD'] == 'POST') && $this->validate()) {
+			// Unset guest
+			unset($this->session->data['guest']);
+
+			// Default Shipping Address
+			$this->load->model('account/address');
+
+			if ($this->config->get('config_tax_customer') == 'payment') {
+				$this->session->data['payment_address'] = $this->model_account_address->getAddress($this->customer->getAddressId());
+			}
+
+			if ($this->config->get('config_tax_customer') == 'shipping') {
+				$this->session->data['shipping_address'] = $this->model_account_address->getAddress($this->customer->getAddressId());
+			}
+
+			// Wishlist
+			if (isset($this->session->data['wishlist']) && is_array($this->session->data['wishlist'])) {
+				$this->load->model('account/wishlist');
+
+				foreach ($this->session->data['wishlist'] as $key => $product_id) {
+					$this->model_account_wishlist->addWishlist($product_id);
+
+					unset($this->session->data['wishlist'][$key]);
+				}
+			}
+
+			// Added strpos check to pass McAfee PCI compliance test (http://forum.opencart.com/viewtopic.php?f=10&t=12043&p=151494#p151295)
+			if (isset($this->request->post['redirect']) && $this->request->post['redirect'] != $this->url->link('account/logout', '', true) && (strpos($this->request->post['redirect'], $this->config->get('config_url')) !== false || strpos($this->request->post['redirect'], $this->config->get('config_ssl')) !== false)) {
+				$this->response->redirect(str_replace('&amp;', '&', $this->request->post['redirect']));
+			} else {
+				$this->response->redirect($this->url->link('account/account', '', true));
+			}
+		}
+
+		$data['breadcrumbs'] = array();
+
+		$data['breadcrumbs'][] = array(
+			'text' => $this->language->get('text_home'),
+			'href' => $this->url->link('common/home')
+		);
+
+		$data['breadcrumbs'][] = array(
+			'text' => $this->language->get('text_account'),
+			'href' => $this->url->link('account/account', '', true)
+		);
+
+		$data['breadcrumbs'][] = array(
+			'text' => $this->language->get('text_login'),
+			'href' => $this->url->link('account/login', '', true)
+		);
+
+		if (isset($this->session->data['error'])) {
+			$data['error_warning'] = $this->session->data['error'];
+
+			unset($this->session->data['error']);
+		} elseif (isset($this->error['warning'])) {
+			$data['error_warning'] = $this->error['warning'];
+		} else {
+			$data['error_warning'] = '';
+		}
+
+		$data['action'] = $this->url->link('account/login', '', true);
+		$data['register'] = $this->url->link('account/register', '', true);
+		$data['forgotten'] = $this->url->link('account/forgotten', '', true);
+
+		// Added strpos check to pass McAfee PCI compliance test (http://forum.opencart.com/viewtopic.php?f=10&t=12043&p=151494#p151295)
+		if (isset($this->request->post['redirect']) && (strpos($this->request->post['redirect'], $this->config->get('config_url')) !== false || strpos($this->request->post['redirect'], $this->config->get('config_ssl')) !== false)) {
+			$data['redirect'] = $this->request->post['redirect'];
+		} elseif (isset($this->session->data['redirect'])) {
+			$data['redirect'] = $this->session->data['redirect'];
+
+			unset($this->session->data['redirect']);
+		} else {
+			$data['redirect'] = '';
+		}
+
+		if (isset($this->session->data['success'])) {
+			$data['success'] = $this->session->data['success'];
+
+			unset($this->session->data['success']);
+		} else {
+			$data['success'] = '';
+		}
+
+		if (isset($this->request->post['email'])) {
+			$data['email'] = $this->request->post['email'];
+		} else {
+			$data['email'] = '';
+		}
+
+		if (isset($this->request->post['password'])) {
+			$data['password'] = $this->request->post['password'];
+		} else {
+			$data['password'] = '';
+		}
+
+		$data['column_left'] = $this->load->controller('common/column_left');
+		$data['column_right'] = $this->load->controller('common/column_right');
+		$data['content_top'] = $this->load->controller('common/content_top');
+		$data['content_bottom'] = $this->load->controller('common/content_bottom');
+		$data['footer'] = $this->load->controller('common/footer');
+		$data['header'] = $this->load->controller('common/header');
+
+		$this->response->setOutput($this->load->view('account/login', $data));
+	}
+
+	protected function validate() {
+		// Check how many login attempts have been made.
+		$login_info = $this->model_account_customer->getLoginAttempts($this->request->post['email']);
+
+		if ($login_info && ($login_info['total'] >= $this->config->get('config_login_attempts')) && strtotime('-1 hour') < strtotime($login_info['date_modified'])) {
+			$this->error['warning'] = $this->language->get('error_attempts');
+		}
+
+		// Check if customer has been approved.
+		$customer_info = $this->model_account_customer->getCustomerByEmail($this->request->post['email']);
+
+		if ($customer_info && !$customer_info['status']) {
+			$this->error['warning'] = $this->language->get('error_approved');
+		}
+
+		if (!$this->error) {
+			if (!$this->customer->login($this->request->post['email'], $this->request->post['password'])) {
+				$this->error['warning'] = $this->language->get('error_login');
+
+				$this->model_account_customer->addLoginAttempt($this->request->post['email']);
+			} else {
+				$this->model_account_customer->deleteLoginAttempts($this->request->post['email']);
+			}
+		}
+
+		return !$this->error;
+	}
 }
-
-// Include config file
-require_once 'config.php';
-
-// Define variables and initialize with empty values
-$username = $password = '';
-$username_err = $password_err = '';
-
-// Processing form data when form is submitted
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
-    // Check if username is empty
-    if (empty(trim($_POST['username']))) {
-        $username_err = 'Please enter username.';
-    } else {
-        $username = trim($_POST['username']);
-    }
-
-    // Check if password is empty
-    if (empty(trim($_POST['password']))) {
-        $password_err = 'Please enter your password.';
-    } else {
-        $password = trim($_POST['password']);
-    }
-
-    // Validate credentials
-    if (empty($username_err) && empty($password_err)) {
-        // Prepare a select statement
-        $sql = 'SELECT id, username, password FROM users WHERE username = ?';
-
-        if ($stmt = mysqli_prepare($link, $sql)) {
-            // Bind variables to the prepared statement as parameters
-            mysqli_stmt_bind_param($stmt, 's', $param_username);
-
-            // Set parameters
-            $param_username = $username;
-
-            // Attempt to execute the prepared statement
-            if (mysqli_stmt_execute($stmt)) {
-                // Store result
-                mysqli_stmt_store_result($stmt);
-
-                // Check if username exists, if yes then verify password
-                if (mysqli_stmt_num_rows($stmt) === 1) {
-                    // Bind result variables
-                    mysqli_stmt_bind_result($stmt, $id, $username, $hashed_password);
-                    if (mysqli_stmt_fetch($stmt)) {
-                        if (password_verify($password, $hashed_password)) {
-                            // Password is correct, so start a new session
-                            session_start();
-
-                            // Store data in session variables
-                            $_SESSION['loggedin'] = true;
-                            $_SESSION['id'] = $id;
-                            $_SESSION['username'] = $username;
-
-                            // Redirect user to welcome page
-                            header('location: login.php');
-                        } else {
-                            // Display an error message if password is not valid
-                            $password_err = 'The password you entered was not valid.';
-                        }
-                    }
-                } else {
-                    // Display an error message if username doesn't exist
-                    $username_err = 'No account found with that username.';
-                }
-            } else {
-                echo 'Oops! Something went wrong. Please try again later.';
-            }
-        }
-
-        // Close statement
-        mysqli_stmt_close($stmt);
-    }
-
-    // Close connection
-    mysqli_close($link);
-}
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>Wholesalers Combined</title>
-    <link rel="stylesheet" type="text/css" href="style.css">
-</head>
-<body>
-
-<h1>Welcome to Wholesalers Combined</h1>
-<div class="imgcontainer">
-    <img align="left" src="wholesalers.jpg" alt="Avatar" class="avatar">
-    <br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
-</div>
-<div class="container">
-    <h2>Already a Member?</h2>
-    <button onclick="document.getElementById('id01').style.display='block'" style="width:auto;">Login</button> &nbsp;&nbsp;
-    <h2>Lets be a Family.</h2>
-    <button onclick="document.getElementById('id02').style.display='block'" style="width:auto;">Register</button>
-</div>
-<div id="id01" class="modal">
-    <!--Login form-->
-    <form class="modal-content animate" action="/action_page.php">
-        <div class="imgcontainer">
-            <span onclick="document.getElementById('id01').style.display='none'" class="close" title="Close">x</span>
-            <img src="ch1.png" alt="Avatar" class="avatar">
-        </div>
-
-        <div class="container">
-            <p>
-                <b>Username</b>
-                <label for="uname">
-                    <input type="text" placeholder="Enter Username" name="uname" id="uname" required>
-                </label>
-            </p>
-            <p>
-                <b>Password</b>
-                <label for="passwd">
-                    <input type="password" placeholder="Enter Password" name="psw" id="passwd" required>
-                </label>
-            </p>
-            <label>
-                <input type="checkbox" checked="checked">
-                Remember me
-            </label>
-        </div>
-
-        <div class="container" style="background-color:#f1f1f1">
-            <button type="submit">Login</button>
-            <button type="button" onclick="document.getElementById('id01').style.display='none'" class="cancelbtn">
-                Cancel
-            </button>
-            <span class="psw">Forgot <a href="#">password?</a></span>
-        </div>
-    </form>
-
-</div>
-<div id="id02" class="modal">
-
-    <!--Register form-->
-    <form class="modal-content animate" action="/action_page.php">
-        <div class="imgcontainer">
-            <span onclick="document.getElementById('id02').style.display='none'" class="close" title="Close">x</span>
-            <img src="wholesalers.jpg" alt="Avatar" class="avatar">
-        </div>
-
-        <div class="container">
-
-            <h1>Sign Up</h1>
-            <p>Please fill in this form to create an account.</p>
-            <hr>
-
-            <p>
-                <b>Username</b>
-                <label for="username">
-                    <input type="text" placeholder="Enter Username" name="username" id="username" required>
-                </label>
-            </p>
-
-            <p>
-                <b>Full Name</b>
-                <label for="name">
-                    <input type="text" placeholder="Enter Full Name" name="name" id="name" required>
-                </label>
-            </p>
-
-            <p>
-                <b>Email</b>
-                <label for="email">
-                    <input type="text" placeholder="Enter Email" name="email" id="email" required>
-                </label>
-            </p>
-
-            <p>
-                <b>Password</b>
-                <label for="psw">
-                    <input type="password" placeholder="Enter Password" name="psw" id="psw" required>
-                </label>
-            </p>
-
-            <p>
-                <b>Repeat Password</b>
-                <label for="psw-repeat">
-                    <input type="password" placeholder="Repeat Password" name="psw-repeat" id="psw-repeat" required>
-                </label>
-            </p>
-
-            <p>
-                <b>Date of Birth</b>
-                <label for="bday">
-                    <input type="date" name="bday" id="bday" min="1900-01-01" max="2007-01-01" >
-                </label>
-            </p>
-
-            <p>
-                <b>Gender</b>
-                <br>
-                <label for="gender-male">
-                    <input type="radio" name="gender" value="male" id="gender-male" checked> Male
-                </label>
-                <br>
-                <label for="gender-female">
-                    <input type="radio" name="gender" value="female"id="gender-female"> Female
-                </label>
-                <br>
-                <label for="gender-other">
-                    <input type="radio" name="gender" value="other"id="gender-other"> Other
-                </label>
-            </p>
-
-            <p>
-                <label>
-                    <input type="checkbox" name="terms">
-                    By creating an account you agree to our
-                    <a href="#" style="color:dodgerblue">Terms  & Privacy</a>.
-                </label>
-            </p>
-        </div>
-
-        <div class="container" style="background-color:#f1f1f1">
-            <button type="submit" class="signupbtn">Sign Up</button>
-            <button type="button" onclick="document.getElementById('id02').style.display='none'" class="cancelbtn">
-                Cancel
-            </button>
-        </div>
-    </form>
-
-</div>
-
-<script>
-    const modal = document.getElementById('id01');
-    window.onclick = function (event) {
-        if (event.target === modal) {
-            modal.style.display = "none";
-        }
-    }
-</script>
-</body>
-
-</html>
